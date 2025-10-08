@@ -16,10 +16,18 @@ interface AIChatProps {
   placeholder?: string;
   suggestions?: string[];
   onMessageSent?: (message: string) => void;
+  messages?: Message[];
+  onMessagesChange?: (messages: Message[]) => void;
 }
 
-export default function AIChat({ placeholder = "Ask AI to help you...", suggestions = [], onMessageSent }: AIChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
+export default function AIChat({ 
+  placeholder = "Ask AI to help you...", 
+  suggestions = [], 
+  onMessageSent,
+  messages: externalMessages,
+  onMessagesChange 
+}: AIChatProps) {
+  const [internalMessages, setInternalMessages] = useState<Message[]>([
     {
       id: "1",
       role: "assistant",
@@ -28,7 +36,10 @@ export default function AIChat({ placeholder = "Ask AI to help you...", suggesti
   ]);
   const [input, setInput] = useState("");
 
-  const handleSend = () => {
+  const messages = externalMessages || internalMessages;
+  const setMessages = onMessagesChange || setInternalMessages;
+
+  const handleSend = async () => {
     if (!input.trim()) return;
 
     const userMessage: Message = {
@@ -38,22 +49,12 @@ export default function AIChat({ placeholder = "Ask AI to help you...", suggesti
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const messageContent = input;
+    setInput("");
     
     if (onMessageSent) {
-      onMessageSent(input);
+      onMessageSent(messageContent);
     }
-
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "I understand. Let me help you with that.",
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    }, 500);
-
-    setInput("");
   };
 
   return (

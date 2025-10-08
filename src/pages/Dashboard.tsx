@@ -1,9 +1,51 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AIChat from "@/components/shared/AIChat";
 import { ArrowUp } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function Dashboard() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "1",
+      role: "assistant",
+      content: "Hi! I'm your CRM analytics assistant. I can help you understand lead quality, conversion rates, and pipeline performance.",
+    },
+  ]);
+  const { toast } = useToast();
+
+  const handleMessageSent = async (message: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-assistant', {
+        body: { message }
+      });
+
+      if (error) throw error;
+
+      const aiMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: data.reply,
+      };
+      
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      console.error("Error calling AI:", error);
+      toast({
+        title: "Error",
+        description: "Failed to get AI response. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
   const metrics = [
     { title: "Opportunity Status", value: "1", change: "+100%", trend: "up", subtitle: "vs Last 31 Days" },
     { title: "Opportunity Value", value: "$0", change: "0%", trend: "neutral", subtitle: "vs Last 31 Days" },
@@ -113,6 +155,9 @@ export default function Dashboard() {
               "How are workflows performing?",
               "Analyze conversion rates",
             ]}
+            messages={messages}
+            onMessagesChange={setMessages}
+            onMessageSent={handleMessageSent}
           />
         </div>
       </div>

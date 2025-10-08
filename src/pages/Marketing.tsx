@@ -5,6 +5,8 @@ import { Calendar } from "@/components/ui/calendar";
 import AIChat from "@/components/shared/AIChat";
 import { Sparkles, Plus, Calendar as CalendarIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const contentPlans = [
   { id: 1, title: "Fall Promotion Campaign", status: "planned", date: "Oct 15, 2025", platform: "Email" },
@@ -12,8 +14,47 @@ const contentPlans = [
   { id: 3, title: "Customer Testimonial Post", status: "scheduled", date: "Oct 12, 2025", platform: "Social" },
 ];
 
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
 export default function Marketing() {
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "1",
+      role: "assistant",
+      content: "Hi! I can help you create engaging marketing content. What would you like to create today?",
+    },
+  ]);
+  const { toast } = useToast();
+
+  const handleMessageSent = async (message: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-content', {
+        body: { prompt: message }
+      });
+
+      if (error) throw error;
+
+      const aiMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: data.content,
+      };
+      
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      console.error("Error generating content:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate content. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -124,6 +165,9 @@ export default function Marketing() {
                   "Write social media post",
                   "Generate ad copy",
                 ]}
+                messages={messages}
+                onMessagesChange={setMessages}
+                onMessageSent={handleMessageSent}
               />
             </CardContent>
           </Card>

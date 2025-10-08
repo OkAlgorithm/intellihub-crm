@@ -4,6 +4,14 @@ import { Button } from "@/components/ui/button";
 import AIChat from "@/components/shared/AIChat";
 import { Workflow as WorkflowIcon, Play, Plus, Sparkles, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
 
 const workflows = [
   { id: 1, name: "Lead Follow-up Sequence", status: "active", triggers: 45, lastRun: "2 hours ago" },
@@ -13,6 +21,45 @@ const workflows = [
 
 export default function Automation() {
   const [showBuilder, setShowBuilder] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "1",
+      role: "assistant",
+      content: "Hi! I can help you create automation workflows. What would you like to automate?",
+    },
+  ]);
+  const { toast } = useToast();
+
+  const handleMessageSent = async (message: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-workflow', {
+        body: { prompt: message }
+      });
+
+      if (error) throw error;
+
+      const aiMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: `I've created a workflow: "${data.workflow.name}"\n\n${data.workflow.description}`,
+      };
+      
+      setMessages((prev) => [...prev, aiMessage]);
+      setShowBuilder(true);
+      
+      toast({
+        title: "Workflow Created",
+        description: data.workflow.name,
+      });
+    } catch (error) {
+      console.error("Error generating workflow:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate workflow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="p-8">
@@ -155,7 +202,9 @@ export default function Automation() {
                   "Automate follow-ups",
                   "Build email sequence",
                 ]}
-                onMessageSent={() => setShowBuilder(true)}
+                messages={messages}
+                onMessagesChange={setMessages}
+                onMessageSent={handleMessageSent}
               />
             </CardContent>
           </Card>

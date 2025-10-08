@@ -6,6 +6,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Phone, Mail, MessageCircle, Send, Star, Plus, Sparkles, CheckCircle2, Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Task {
+  id: number | string;
+  title: string;
+  completed: boolean;
+  dueDate: string;
+}
 
 const conversations = [
   { id: 1, name: "(773) 241-8719", type: "call", time: "2:28 AM", unread: 1, snippet: "Inbound Call" },
@@ -15,16 +24,12 @@ const conversations = [
   { id: 5, name: "(909) 496-7668", type: "call", time: "Sep 03", unread: 4, snippet: "Hi this is EA Pro Painters, I saw tha..." },
 ];
 
-const dummyTasks = [
-  { id: 1, title: "Follow up on quote request", completed: false, dueDate: "Tomorrow" },
-  { id: 2, title: "Send painting samples", completed: true, dueDate: "Today" },
-  { id: 3, title: "Schedule site visit", completed: false, dueDate: "Oct 10" },
-];
-
 export default function Conversations() {
   const [selectedConversation, setSelectedConversation] = useState(conversations[0]);
   const [message, setMessage] = useState("");
-  const [tasks, setTasks] = useState(dummyTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { toast } = useToast();
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -34,13 +39,39 @@ export default function Conversations() {
     }
   };
 
-  const generateTasks = () => {
-    const newTasks = [
-      { id: Date.now(), title: "Send project estimate for exterior painting", completed: false, dueDate: "Oct 10" },
-      { id: Date.now() + 1, title: "Confirm availability for October 15th", completed: false, dueDate: "Oct 9" },
-      { id: Date.now() + 2, title: "Provide references from similar projects", completed: false, dueDate: "Oct 11" },
-    ];
-    setTasks(newTasks);
+  const generateTasks = async () => {
+    setIsGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-tasks', {
+        body: { 
+          conversationContext: `Conversation with ${selectedConversation.name}: ${selectedConversation.snippet}` 
+        }
+      });
+
+      if (error) throw error;
+
+      const generatedTasks = data.tasks.map((task: any, index: number) => ({
+        id: (index + 1).toString(),
+        title: task.title,
+        completed: false,
+        dueDate: task.dueDate,
+      }));
+
+      setTasks(generatedTasks);
+      toast({
+        title: "Success",
+        description: "AI-generated tasks have been created.",
+      });
+    } catch (error) {
+      console.error("Error generating tasks:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate tasks. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -150,9 +181,9 @@ export default function Conversations() {
               <Circle className="h-4 w-4" />
               Tasks
             </h3>
-            <Button variant="ghost" size="sm" onClick={generateTasks}>
+            <Button variant="ghost" size="sm" onClick={generateTasks} disabled={isGenerating}>
               <Sparkles className="h-4 w-4 mr-1" />
-              Generate
+              {isGenerating ? "Generating..." : "Generate"}
             </Button>
           </div>
           <Button variant="outline" size="sm" className="w-full">
