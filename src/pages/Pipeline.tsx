@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Phone, Mail, DollarSign, Calendar, MessageCircle, Sparkles } from "lucide-react";
+import { Phone, Mail, MessageCircle, Sparkles, FileText, Calendar, Trash2, Grid3x3, List, Plus, Filter, DollarSign } from "lucide-react";
 
 interface Deal {
   id: string;
@@ -24,14 +25,12 @@ interface Deal {
   avatar_url: string | null;
 }
 
-const stageOrder = ['lead', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
+const stageOrder = ['lead', 'qualified', 'proposal', 'negotiation'];
 const stageLabels = {
-  lead: 'Lead',
-  qualified: 'Qualified',
-  proposal: 'Proposal',
-  negotiation: 'Negotiation',
-  closed_won: 'Closed Won',
-  closed_lost: 'Closed Lost',
+  lead: 'No answer',
+  qualified: 'Intro Call',
+  proposal: 'Estimate Scheduled',
+  negotiation: 'Appointment',
 };
 
 export default function Pipeline() {
@@ -40,6 +39,8 @@ export default function Pipeline() {
   const [aiQuery, setAiQuery] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [filterValue, setFilterValue] = useState("all");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -106,63 +107,154 @@ export default function Pipeline() {
     return acc;
   }, {} as Record<string, Deal[]>);
 
+  const totalOpportunities = deals.length;
+
   return (
     <div className="h-screen flex flex-col bg-background">
-      <div className="p-6 border-b border-border">
-        <h1 className="text-3xl font-bold">Sales Pipeline</h1>
-        <p className="text-muted-foreground mt-1">Track and manage your deals</p>
+      {/* Header */}
+      <div className="border-b border-border bg-card">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold">Opportunities</h1>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm">
+                <Filter className="h-4 w-4 mr-2" />
+                Import
+              </Button>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add opportunity
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Select value={filterValue} onValueChange={setFilterValue}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                <SelectItem value="fb_ads">FB Ads</SelectItem>
+                <SelectItem value="facebook_lead">Facebook Lead</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-primary">{totalOpportunities} opportunities</span>
+            </div>
+
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+              >
+                <Grid3x3 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-4">
+            <Button variant="ghost" size="sm">
+              <Filter className="h-4 w-4 mr-2" />
+              Advanced Filters
+            </Button>
+            <Button variant="ghost" size="sm">
+              Sort (1)
+            </Button>
+          </div>
+        </div>
       </div>
 
+      {/* Pipeline Columns */}
       <ScrollArea className="flex-1">
-        <div className="p-6">
-          <div className="grid grid-cols-3 gap-4">
+        <div className="p-4">
+          <div className="grid grid-cols-4 gap-4">
             {stageOrder.map(stage => (
-              <div key={stage} className="flex flex-col gap-3">
-                <div className="sticky top-0 bg-background z-10 pb-2">
+              <div key={stage} className="flex flex-col">
+                {/* Stage Header */}
+                <div className="mb-3 p-3 bg-muted/50 rounded-lg">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-sm">{stageLabels[stage as keyof typeof stageLabels]}</h3>
                     <Badge variant="secondary" className="text-xs">
-                      {dealsByStage[stage]?.length || 0}
+                      {dealsByStage[stage]?.length || 0} Opportunities
                     </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    ${dealsByStage[stage]?.reduce((sum, d) => sum + (d.value || 0), 0).toFixed(2)}
                   </div>
                 </div>
 
+                {/* Opportunity Cards */}
                 <div className="space-y-3">
                   {dealsByStage[stage]?.map(deal => (
                     <Card
                       key={deal.id}
-                      className="cursor-pointer hover:shadow-md transition-shadow"
+                      className="cursor-pointer hover:shadow-md transition-all hover:border-primary/50"
                       onClick={() => handleDealClick(deal)}
                     >
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <Avatar className="h-10 w-10">
-                            <AvatarFallback className="bg-primary/10 text-primary">
-                              {getInitials(deal.contact_name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-sm truncate">{deal.contact_name}</h4>
-                            {deal.company && (
-                              <p className="text-xs text-muted-foreground truncate">{deal.company}</p>
-                            )}
-                            {deal.value && (
-                              <div className="flex items-center gap-1 mt-2 text-xs">
-                                <DollarSign className="h-3 w-3" />
-                                <span className="font-medium">{deal.value.toLocaleString()}</span>
-                                {deal.probability && (
-                                  <span className="text-muted-foreground ml-1">
-                                    ({deal.probability}%)
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {deal.expected_close_date && (
-                              <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                                <Calendar className="h-3 w-3" />
-                                <span>{new Date(deal.expected_close_date).toLocaleDateString()}</span>
-                              </div>
-                            )}
+                      <CardContent className="p-3">
+                        <div className="space-y-3">
+                          {/* Contact Info */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-sm truncate">{deal.contact_name}</h4>
+                              {deal.phone && (
+                                <p className="text-xs text-muted-foreground truncate">{deal.phone}</p>
+                              )}
+                            </div>
+                            <Avatar className="h-8 w-8 flex-shrink-0">
+                              <AvatarFallback className="bg-muted text-xs">
+                                {getInitials(deal.contact_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                          </div>
+
+                          {/* Source and Value */}
+                          <div className="space-y-1">
+                            <div className="flex items-center text-xs text-muted-foreground">
+                              <span className="font-medium mr-1">Opportunity Source:</span>
+                              <span className="truncate">{deal.company || 'FB Ads'}</span>
+                            </div>
+                            <div className="flex items-center text-xs text-muted-foreground">
+                              <span className="font-medium mr-1">Opportunity Value:</span>
+                              <span>${(deal.value || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* Action Icons */}
+                          <div className="flex items-center gap-2 pt-2 border-t border-border">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <Phone className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <MessageCircle className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 relative">
+                              <Mail className="h-3.5 w-3.5" />
+                              {deal.probability && deal.probability > 50 && (
+                                <span className="absolute -top-1 -right-1 h-3 w-3 bg-primary rounded-full text-[8px] text-primary-foreground flex items-center justify-center">
+                                  1
+                                </span>
+                              )}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <FileText className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <Calendar className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 ml-auto">
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
                           </div>
                         </div>
                       </CardContent>
