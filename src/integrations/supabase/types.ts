@@ -14,7 +14,113 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audio_messages: {
+        Row: {
+          audio_url: string
+          conversation_id: string
+          created_at: string | null
+          duration: number | null
+          id: string
+          transcription: string | null
+        }
+        Insert: {
+          audio_url: string
+          conversation_id: string
+          created_at?: string | null
+          duration?: number | null
+          id?: string
+          transcription?: string | null
+        }
+        Update: {
+          audio_url?: string
+          conversation_id?: string
+          created_at?: string | null
+          duration?: number | null
+          id?: string
+          transcription?: string | null
+        }
+        Relationships: []
+      }
+      contact_knowledge: {
+        Row: {
+          content: string
+          created_at: string | null
+          deal_id: string | null
+          id: string
+          metadata: Json | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          deal_id?: string | null
+          id?: string
+          metadata?: Json | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          deal_id?: string | null
+          id?: string
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_knowledge_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deals: {
+        Row: {
+          avatar_url: string | null
+          company: string | null
+          contact_name: string
+          created_at: string | null
+          email: string | null
+          expected_close_date: string | null
+          id: string
+          notes: string | null
+          phone: string | null
+          probability: number | null
+          stage: Database["public"]["Enums"]["deal_stage"]
+          updated_at: string | null
+          value: number | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          company?: string | null
+          contact_name: string
+          created_at?: string | null
+          email?: string | null
+          expected_close_date?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          probability?: number | null
+          stage?: Database["public"]["Enums"]["deal_stage"]
+          updated_at?: string | null
+          value?: number | null
+        }
+        Update: {
+          avatar_url?: string | null
+          company?: string | null
+          contact_name?: string
+          created_at?: string | null
+          email?: string | null
+          expected_close_date?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          probability?: number | null
+          stage?: Database["public"]["Enums"]["deal_stage"]
+          updated_at?: string | null
+          value?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +129,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      deal_stage:
+        | "lead"
+        | "qualified"
+        | "proposal"
+        | "negotiation"
+        | "closed_won"
+        | "closed_lost"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +262,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      deal_stage: [
+        "lead",
+        "qualified",
+        "proposal",
+        "negotiation",
+        "closed_won",
+        "closed_lost",
+      ],
+    },
   },
 } as const
