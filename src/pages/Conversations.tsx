@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Phone, Mail, MessageCircle, Send, Star, Plus, Sparkles, CheckCircle2, Circle } from "lucide-react";
+import { Phone, Mail, MessageCircle, Send, Star, Plus, Sparkles, CheckCircle2, Circle, Mic, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,15 @@ interface Task {
   title: string;
   completed: boolean;
   dueDate: string;
+}
+
+interface AudioMessage {
+  id: string;
+  conversation_id: string;
+  audio_url: string;
+  transcription: string | null;
+  duration: number | null;
+  created_at: string;
 }
 
 const conversations = [
@@ -29,7 +38,65 @@ export default function Conversations() {
   const [message, setMessage] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [audioMessages, setAudioMessages] = useState<AudioMessage[]>([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (selectedConversation) {
+      fetchAudioMessages(selectedConversation.id.toString());
+    }
+  }, [selectedConversation]);
+
+  const fetchAudioMessages = async (conversationId: string) => {
+    const { data, error } = await supabase
+      .from('audio_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error("Error fetching audio messages:", error);
+    } else {
+      setAudioMessages(data || []);
+    }
+  };
+
+  const transcribeAudio = async (audioMessage: AudioMessage) => {
+    if (audioMessage.transcription) return;
+    
+    setIsTranscribing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('transcribe-audio', {
+        body: { audioUrl: audioMessage.audio_url }
+      });
+
+      if (error) throw error;
+
+      // Update the audio message with transcription
+      await supabase
+        .from('audio_messages')
+        .update({ transcription: data.transcription })
+        .eq('id', audioMessage.id);
+
+      // Refresh messages
+      fetchAudioMessages(selectedConversation.id.toString());
+
+      toast({
+        title: "Success",
+        description: "Audio transcribed successfully",
+      });
+    } catch (error) {
+      console.error("Error transcribing audio:", error);
+      toast({
+        title: "Error",
+        description: "Failed to transcribe audio",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -155,6 +222,45 @@ export default function Conversations() {
                 <p className="text-xs text-muted-foreground mt-1">02:28 AM</p>
               </div>
             </div>
+
+            {/* Audio Messages */}
+            {audioMessages.map((audioMsg) => (
+              <div key={audioMsg.id} className="flex gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Mic className="h-4 w-4" />
+                </div>
+                <div className="bg-muted rounded-lg p-3 max-w-md space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium">Audio Message</p>
+                    {audioMsg.duration && (
+                      <span className="text-xs text-muted-foreground">
+                        {audioMsg.duration}s
+                      </span>
+                    )}
+                  </div>
+                  {audioMsg.transcription ? (
+                    <div className="text-sm bg-card p-2 rounded border border-border">
+                      <p className="text-xs text-muted-foreground mb-1">Transcription:</p>
+                      <p>{audioMsg.transcription}</p>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => transcribeAudio(audioMsg)}
+                      disabled={isTranscribing}
+                    >
+                      <Sparkles className="h-3 w-3 mr-1" />
+                      {isTranscribing ? "Transcribing..." : "Transcribe with AI"}
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(audioMsg.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </ScrollArea>
 

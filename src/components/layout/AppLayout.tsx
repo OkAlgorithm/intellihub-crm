@@ -6,13 +6,15 @@ import {
   Workflow, 
   Calendar as CalendarIcon, 
   Settings,
-  TrendingUp
+  TrendingUp,
+  GitBranch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Conversations", href: "/conversations", icon: MessageSquare },
+  { name: "Pipeline", href: "/pipeline", icon: GitBranch },
   { name: "Marketing", href: "/marketing", icon: Megaphone },
   { name: "Automation", href: "/automation", icon: Workflow },
   { name: "Calendar", href: "/calendar", icon: CalendarIcon },

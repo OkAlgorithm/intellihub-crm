@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.generate-workflow]
 verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false
+
+[functions.query-knowledge]
+verify_jwt = false
