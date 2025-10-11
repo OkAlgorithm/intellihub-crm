@@ -121,6 +121,90 @@ export type Database = {
         }
         Relationships: []
       }
+      task_permissions: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          conversation_id: string
+          created_at: string
+          id: string
+          status: string | null
+          task_description: string | null
+          task_id: string
+          task_title: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          conversation_id: string
+          created_at?: string
+          id?: string
+          status?: string | null
+          task_description?: string | null
+          task_id: string
+          task_title: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          status?: string | null
+          task_description?: string | null
+          task_id?: string
+          task_title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workflows: {
+        Row: {
+          actions: Json | null
+          created_at: string
+          description: string | null
+          id: string
+          last_run_at: string | null
+          name: string
+          status: string | null
+          trigger_config: Json | null
+          trigger_type: string
+          triggers_executed: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actions?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_run_at?: string | null
+          name: string
+          status?: string | null
+          trigger_config?: Json | null
+          trigger_type: string
+          triggers_executed?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actions?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_run_at?: string | null
+          name?: string
+          status?: string | null
+          trigger_config?: Json | null
+          trigger_type?: string
+          triggers_executed?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

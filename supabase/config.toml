@@ -17,3 +17,12 @@ verify_jwt = false
 
 [functions.query-knowledge]
 verify_jwt = false
+
+[functions.gmail-sync]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.execute-task-action]
+verify_jwt = false

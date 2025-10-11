@@ -14,6 +14,9 @@ interface Task {
   title: string;
   completed: boolean;
   dueDate: string;
+  requiresPermission?: boolean;
+  permissionStatus?: 'pending' | 'approved' | 'rejected';
+  permissionId?: string;
 }
 
 interface AudioMessage {
@@ -117,17 +120,46 @@ export default function Conversations() {
 
       if (error) throw error;
 
-      const generatedTasks = data.tasks.map((task: any, index: number) => ({
-        id: (index + 1).toString(),
-        title: task.title,
-        completed: false,
-        dueDate: task.dueDate,
-      }));
+      // Create task permissions for each task
+      const generatedTasks: Task[] = [];
+      
+      for (let i = 0; i < data.tasks.length; i++) {
+        const task = data.tasks[i];
+        const taskId = `task-${Date.now()}-${i}`;
+        
+        // Insert permission request
+        const { data: permissionData, error: permError } = await supabase
+          .from('task_permissions')
+          .insert({
+            conversation_id: selectedConversation.id.toString(),
+            task_id: taskId,
+            task_title: task.title,
+            task_description: task.description,
+            status: 'pending'
+          })
+          .select()
+          .single();
+
+        if (permError) {
+          console.error('Error creating permission:', permError);
+          continue;
+        }
+
+        generatedTasks.push({
+          id: taskId,
+          title: task.title,
+          completed: false,
+          dueDate: task.dueDate,
+          requiresPermission: true,
+          permissionStatus: 'pending',
+          permissionId: permissionData.id
+        });
+      }
 
       setTasks(generatedTasks);
       toast({
         title: "Success",
-        description: "AI-generated tasks have been created.",
+        description: "AI-generated tasks require your approval.",
       });
     } catch (error) {
       console.error("Error generating tasks:", error);
@@ -138,6 +170,42 @@ export default function Conversations() {
       });
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleTaskPermission = async (task: Task, action: 'approve' | 'reject') => {
+    if (!task.permissionId) return;
+
+    try {
+      const { error } = await supabase.functions.invoke('execute-task-action', {
+        body: {
+          taskId: task.id,
+          permissionId: task.permissionId,
+          action
+        }
+      });
+
+      if (error) throw error;
+
+      setTasks(tasks.map(t => 
+        t.id === task.id 
+          ? { ...t, permissionStatus: action === 'approve' ? 'approved' : 'rejected' }
+          : t
+      ));
+
+      toast({
+        title: action === 'approve' ? "Task Approved" : "Task Rejected",
+        description: action === 'approve' 
+          ? "AI can now execute this task" 
+          : "Task has been rejected",
+      });
+    } catch (error) {
+      console.error("Error handling task permission:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process task permission",
+        variant: "destructive",
+      });
     }
   };
 
@@ -308,26 +376,63 @@ export default function Conversations() {
             ) : (
               tasks.map((task) => (
                 <Card key={task.id} className="p-3">
-                  <div className="flex items-start gap-2">
-                    <div className={cn(
-                      "mt-0.5 flex-shrink-0",
-                      task.completed ? "text-success" : "text-muted-foreground"
-                    )}>
-                      {task.completed ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : (
-                        <Circle className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className={cn(
-                        "text-sm",
-                        task.completed && "line-through text-muted-foreground"
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-start gap-2">
+                      <div className={cn(
+                        "mt-0.5 flex-shrink-0",
+                        task.completed ? "text-success" : "text-muted-foreground"
                       )}>
-                        {task.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">{task.dueDate}</p>
+                        {task.completed ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : (
+                          <Circle className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className={cn(
+                          "text-sm",
+                          task.completed && "line-through text-muted-foreground"
+                        )}>
+                          {task.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{task.dueDate}</p>
+                      </div>
                     </div>
+                    
+                    {task.requiresPermission && task.permissionStatus === 'pending' && (
+                      <div className="flex gap-2 mt-2">
+                        <Button 
+                          size="sm" 
+                          variant="default"
+                          onClick={() => handleTaskPermission(task, 'approve')}
+                          className="flex-1"
+                        >
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Approve
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleTaskPermission(task, 'reject')}
+                          className="flex-1"
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {task.requiresPermission && task.permissionStatus === 'approved' && (
+                      <Badge variant="default" className="w-fit mt-2">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Approved
+                      </Badge>
+                    )}
+                    
+                    {task.requiresPermission && task.permissionStatus === 'rejected' && (
+                      <Badge variant="secondary" className="w-fit mt-2">
+                        Rejected
+                      </Badge>
+                    )}
                   </div>
                 </Card>
               ))

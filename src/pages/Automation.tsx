@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import AIChat from "@/components/shared/AIChat";
-import { Workflow as WorkflowIcon, Play, Plus, Sparkles, Check } from "lucide-react";
+import { Workflow as WorkflowIcon, Play, Plus, Sparkles, Check, Mail, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Message {
   id: string;
@@ -13,39 +14,78 @@ interface Message {
   content: string;
 }
 
-const workflows = [
-  { id: 1, name: "Lead Follow-up Sequence", status: "active", triggers: 45, lastRun: "2 hours ago" },
-  { id: 2, name: "Email Campaign Automation", status: "active", triggers: 23, lastRun: "1 day ago" },
-  { id: 3, name: "Task Assignment Flow", status: "paused", triggers: 12, lastRun: "3 days ago" },
-];
+interface Workflow {
+  id: string;
+  name: string;
+  status: string;
+  trigger_type: string;
+  triggers_executed: number;
+  last_run_at: string | null;
+}
 
 export default function Automation() {
   const [showBuilder, setShowBuilder] = useState(false);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedTrigger, setSelectedTrigger] = useState<string>("gmail");
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
       role: "assistant",
-      content: "Hi! I can help you create automation workflows. What would you like to automate?",
+      content: "Hi! I can help you create automation workflows for Gmail and WhatsApp. What would you like to automate?",
     },
   ]);
   const { toast } = useToast();
 
+  useEffect(() => {
+    fetchWorkflows();
+  }, []);
+
+  const fetchWorkflows = async () => {
+    const { data, error } = await supabase
+      .from('workflows')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching workflows:', error);
+    } else {
+      setWorkflows(data || []);
+    }
+  };
+
   const handleMessageSent = async (message: string) => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase.functions.invoke('generate-workflow', {
-        body: { prompt: message }
+        body: { prompt: message, triggerType: selectedTrigger }
       });
 
       if (error) throw error;
 
+      // Save workflow to database
+      const { error: insertError } = await supabase
+        .from('workflows')
+        .insert({
+          user_id: user.id,
+          name: data.workflow.name,
+          description: data.workflow.description,
+          trigger_type: selectedTrigger,
+          actions: data.workflow.actions || []
+        });
+
+      if (insertError) throw insertError;
+
       const aiMessage: Message = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `I've created a workflow: "${data.workflow.name}"\n\n${data.workflow.description}`,
+        content: `I've created a ${selectedTrigger} workflow: "${data.workflow.name}"\n\n${data.workflow.description}`,
       };
       
       setMessages((prev) => [...prev, aiMessage]);
       setShowBuilder(true);
+      fetchWorkflows();
       
       toast({
         title: "Workflow Created",
@@ -56,6 +96,42 @@ export default function Automation() {
       toast({
         title: "Error",
         description: "Failed to generate workflow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const runWorkflow = async (workflowId: string, triggerType: string) => {
+    try {
+      if (triggerType === 'gmail') {
+        await supabase.functions.invoke('gmail-sync', {
+          body: { action: 'sync' }
+        });
+      } else if (triggerType === 'whatsapp') {
+        // For WhatsApp, this would typically be triggered by incoming webhooks
+        toast({
+          title: "WhatsApp Integration",
+          description: "WhatsApp workflows are triggered automatically by incoming messages",
+        });
+        return;
+      }
+
+      await supabase
+        .from('workflows')
+        .update({ last_run_at: new Date().toISOString() })
+        .eq('id', workflowId);
+
+      fetchWorkflows();
+      
+      toast({
+        title: "Workflow Executed",
+        description: "Workflow ran successfully",
+      });
+    } catch (error) {
+      console.error("Error running workflow:", error);
+      toast({
+        title: "Error",
+        description: "Failed to run workflow",
         variant: "destructive",
       });
     }
@@ -83,31 +159,57 @@ export default function Automation() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {workflows.map((workflow) => (
-                  <Card key={workflow.id} className="p-4 hover:shadow-md transition-shadow cursor-pointer">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <WorkflowIcon className="h-5 w-5 text-primary" />
+                {workflows.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <p className="text-sm">No workflows yet</p>
+                    <p className="text-xs mt-1">Use AI to create your first automation</p>
+                  </div>
+                ) : (
+                  workflows.map((workflow) => (
+                    <Card key={workflow.id} className="p-4 hover:shadow-md transition-shadow cursor-pointer">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                            {workflow.trigger_type === 'gmail' ? (
+                              <Mail className="h-5 w-5 text-primary" />
+                            ) : workflow.trigger_type === 'whatsapp' ? (
+                              <MessageCircle className="h-5 w-5 text-primary" />
+                            ) : (
+                              <WorkflowIcon className="h-5 w-5 text-primary" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold">{workflow.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Last run: {workflow.last_run_at 
+                                ? new Date(workflow.last_run_at).toLocaleString() 
+                                : 'Never'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-semibold">{workflow.name}</h4>
-                          <p className="text-sm text-muted-foreground">Last run: {workflow.lastRun}</p>
-                        </div>
+                        <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
+                          {workflow.status}
+                        </Badge>
                       </div>
-                      <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
-                        {workflow.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-muted-foreground">{workflow.triggers} triggers executed</span>
-                      <Button variant="ghost" size="sm">
-                        <Play className="h-3 w-3 mr-1" />
-                        Run
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
+                      <div className="flex items-center gap-4 text-sm">
+                        <Badge variant="outline" className="text-xs">
+                          {workflow.trigger_type}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          {workflow.triggers_executed} triggers executed
+                        </span>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => runWorkflow(workflow.id, workflow.trigger_type)}
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          Run
+                        </Button>
+                      </div>
+                    </Card>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -192,6 +294,27 @@ export default function Automation() {
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
                 <CardTitle>AI Workflow Creator</CardTitle>
+              </div>
+              <div className="mt-4">
+                <Select value={selectedTrigger} onValueChange={setSelectedTrigger}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select trigger type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gmail">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        <span>Gmail</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="whatsapp">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4" />
+                        <span>WhatsApp</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardHeader>
             <CardContent className="flex-1 p-0">
