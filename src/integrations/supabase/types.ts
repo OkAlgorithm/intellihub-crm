@@ -121,6 +121,39 @@ export type Database = {
         }
         Relationships: []
       }
+      integrations: {
+        Row: {
+          config: Json | null
+          connected_at: string | null
+          created_at: string | null
+          id: string
+          integration_type: string
+          is_connected: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          config?: Json | null
+          connected_at?: string | null
+          created_at?: string | null
+          id?: string
+          integration_type: string
+          is_connected?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          config?: Json | null
+          connected_at?: string | null
+          created_at?: string | null
+          id?: string
+          integration_type?: string
+          is_connected?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       task_permissions: {
         Row: {
           approved_at: string | null
