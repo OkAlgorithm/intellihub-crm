@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, MessageCircle, Instagram, CheckCircle, XCircle } from "lucide-react";
+import { z } from "zod";
 
 interface Integration {
   id: string;
@@ -21,10 +22,44 @@ interface Integration {
   config: any;
 }
 
+interface IntegrationConfig {
+  // Gmail
+  gmail_client_id?: string;
+  gmail_client_secret?: string;
+  gmail_refresh_token?: string;
+  // WhatsApp
+  whatsapp_phone_number_id?: string;
+  whatsapp_access_token?: string;
+  whatsapp_business_account_id?: string;
+  // Instagram
+  instagram_access_token?: string;
+  instagram_page_id?: string;
+}
+
+// Validation schemas
+const gmailConfigSchema = z.object({
+  gmail_client_id: z.string().trim().min(1, "Client ID is required"),
+  gmail_client_secret: z.string().trim().min(1, "Client Secret is required"),
+  gmail_refresh_token: z.string().trim().min(1, "Refresh Token is required"),
+});
+
+const whatsappConfigSchema = z.object({
+  whatsapp_phone_number_id: z.string().trim().min(1, "Phone Number ID is required"),
+  whatsapp_access_token: z.string().trim().min(1, "Access Token is required"),
+  whatsapp_business_account_id: z.string().trim().min(1, "Business Account ID is required"),
+});
+
+const instagramConfigSchema = z.object({
+  instagram_access_token: z.string().trim().min(1, "Access Token is required"),
+  instagram_page_id: z.string().trim().min(1, "Page ID is required"),
+});
+
 export default function Settings() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [configData, setConfigData] = useState<IntegrationConfig>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -52,7 +87,44 @@ export default function Settings() {
     return integrations.find(i => i.integration_type === type);
   };
 
-  const toggleConnection = async (type: string, currentStatus: boolean) => {
+  const validateConfig = (type: string, config: IntegrationConfig): { success: boolean; errors?: Record<string, string> } => {
+    try {
+      if (type === 'gmail') {
+        gmailConfigSchema.parse({
+          gmail_client_id: config.gmail_client_id,
+          gmail_client_secret: config.gmail_client_secret,
+          gmail_refresh_token: config.gmail_refresh_token,
+        });
+      } else if (type === 'whatsapp') {
+        whatsappConfigSchema.parse({
+          whatsapp_phone_number_id: config.whatsapp_phone_number_id,
+          whatsapp_access_token: config.whatsapp_access_token,
+          whatsapp_business_account_id: config.whatsapp_business_account_id,
+        });
+      } else if (type === 'instagram') {
+        instagramConfigSchema.parse({
+          instagram_access_token: config.instagram_access_token,
+          instagram_page_id: config.instagram_page_id,
+        });
+      }
+      return { success: true };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors: Record<string, string> = {};
+        error.errors.forEach(err => {
+          if (err.path[0]) {
+            errors[err.path[0].toString()] = err.message;
+          }
+        });
+        return { success: false, errors };
+      }
+      return { success: false };
+    }
+  };
+
+  const connectIntegration = async () => {
+    if (!selectedIntegration) return;
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       toast({
@@ -63,15 +135,30 @@ export default function Settings() {
       return;
     }
 
-    const integration = getIntegrationStatus(type);
+    // Validate configuration
+    const validation = validateConfig(selectedIntegration.integration_type, configData);
+    if (!validation.success) {
+      setValidationErrors(validation.errors || {});
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields correctly",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setValidationErrors({});
+
+    const integration = getIntegrationStatus(selectedIntegration.integration_type);
     
     if (integration) {
       // Update existing
       const { error } = await supabase
         .from('integrations')
         .update({ 
-          is_connected: !currentStatus,
-          connected_at: !currentStatus ? new Date().toISOString() : null
+          is_connected: true,
+          connected_at: new Date().toISOString(),
+          config: configData as any
         })
         .eq('id', integration.id);
 
@@ -88,12 +175,13 @@ export default function Settings() {
       // Create new
       const { error } = await supabase
         .from('integrations')
-        .insert({
+        .insert([{
           user_id: user.id,
-          integration_type: type,
+          integration_type: selectedIntegration.integration_type,
           is_connected: true,
-          connected_at: new Date().toISOString()
-        });
+          connected_at: new Date().toISOString(),
+          config: configData as any
+        }]);
 
       if (error) {
         console.error('Error creating integration:', error);
@@ -107,9 +195,45 @@ export default function Settings() {
     }
 
     await fetchIntegrations();
+    setIsDialogOpen(false);
+    setConfigData({});
     toast({
-      title: "Integration Updated",
-      description: `${type} has been ${!currentStatus ? 'connected' : 'disconnected'}`,
+      title: "Integration Connected",
+      description: `${selectedIntegration.integration_type} has been successfully connected`,
+    });
+  };
+
+  const disconnectIntegration = async () => {
+    if (!selectedIntegration) return;
+
+    const integration = getIntegrationStatus(selectedIntegration.integration_type);
+    if (!integration) return;
+
+    const { error } = await supabase
+      .from('integrations')
+      .update({ 
+        is_connected: false,
+        connected_at: null,
+        config: {} as any
+      })
+      .eq('id', integration.id);
+
+    if (error) {
+      console.error('Error disconnecting integration:', error);
+      toast({
+        title: "Error",
+        description: "Failed to disconnect integration",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await fetchIntegrations();
+    setIsDialogOpen(false);
+    setConfigData({});
+    toast({
+      title: "Integration Disconnected",
+      description: `${selectedIntegration.integration_type} has been disconnected`,
     });
   };
 
@@ -122,6 +246,15 @@ export default function Settings() {
       connected_at: null,
       config: {}
     } as Integration);
+    
+    // Load existing config if connected
+    if (integration?.config) {
+      setConfigData(integration.config);
+    } else {
+      setConfigData({});
+    }
+    
+    setValidationErrors({});
     setIsDialogOpen(true);
   };
 
@@ -464,66 +597,198 @@ export default function Settings() {
               </div>
             </div>
 
-            {selectedIntegration?.integration_type === 'gmail' && (
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm">
-                  Connecting Gmail will allow you to:
-                </p>
-                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                  <li>Sync emails automatically</li>
-                  <li>Create workflows from email triggers</li>
-                  <li>Send automated responses</li>
-                </ul>
+            {/* Gmail Configuration */}
+            {selectedIntegration?.integration_type === 'gmail' && !selectedIntegration?.is_connected && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="gmail_client_id">Client ID *</Label>
+                  <Input
+                    id="gmail_client_id"
+                    type="text"
+                    placeholder="Your Gmail OAuth Client ID"
+                    value={configData.gmail_client_id || ''}
+                    onChange={(e) => setConfigData({ ...configData, gmail_client_id: e.target.value })}
+                    className={validationErrors.gmail_client_id ? "border-destructive" : ""}
+                  />
+                  {validationErrors.gmail_client_id && (
+                    <p className="text-xs text-destructive">{validationErrors.gmail_client_id}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gmail_client_secret">Client Secret *</Label>
+                  <Input
+                    id="gmail_client_secret"
+                    type="password"
+                    placeholder="Your Gmail OAuth Client Secret"
+                    value={configData.gmail_client_secret || ''}
+                    onChange={(e) => setConfigData({ ...configData, gmail_client_secret: e.target.value })}
+                    className={validationErrors.gmail_client_secret ? "border-destructive" : ""}
+                  />
+                  {validationErrors.gmail_client_secret && (
+                    <p className="text-xs text-destructive">{validationErrors.gmail_client_secret}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gmail_refresh_token">Refresh Token *</Label>
+                  <Input
+                    id="gmail_refresh_token"
+                    type="password"
+                    placeholder="Your Gmail Refresh Token"
+                    value={configData.gmail_refresh_token || ''}
+                    onChange={(e) => setConfigData({ ...configData, gmail_refresh_token: e.target.value })}
+                    className={validationErrors.gmail_refresh_token ? "border-destructive" : ""}
+                  />
+                  {validationErrors.gmail_refresh_token && (
+                    <p className="text-xs text-destructive">{validationErrors.gmail_refresh_token}</p>
+                  )}
+                </div>
+                <div className="p-3 bg-muted rounded-lg text-xs text-muted-foreground">
+                  <p className="font-medium mb-1">How to get Gmail credentials:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Go to Google Cloud Console</li>
+                    <li>Create OAuth 2.0 credentials</li>
+                    <li>Enable Gmail API</li>
+                    <li>Generate refresh token</li>
+                  </ol>
+                </div>
               </div>
             )}
 
-            {selectedIntegration?.integration_type === 'whatsapp' && (
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm">
-                  Connecting WhatsApp Business will enable:
-                </p>
-                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                  <li>Automated message responses</li>
-                  <li>Lead capture from WhatsApp</li>
-                  <li>Workflow triggers from messages</li>
-                </ul>
+            {/* WhatsApp Configuration */}
+            {selectedIntegration?.integration_type === 'whatsapp' && !selectedIntegration?.is_connected && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp_phone_number_id">Phone Number ID *</Label>
+                  <Input
+                    id="whatsapp_phone_number_id"
+                    type="text"
+                    placeholder="Your WhatsApp Phone Number ID"
+                    value={configData.whatsapp_phone_number_id || ''}
+                    onChange={(e) => setConfigData({ ...configData, whatsapp_phone_number_id: e.target.value })}
+                    className={validationErrors.whatsapp_phone_number_id ? "border-destructive" : ""}
+                  />
+                  {validationErrors.whatsapp_phone_number_id && (
+                    <p className="text-xs text-destructive">{validationErrors.whatsapp_phone_number_id}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp_access_token">Access Token *</Label>
+                  <Input
+                    id="whatsapp_access_token"
+                    type="password"
+                    placeholder="Your WhatsApp Access Token"
+                    value={configData.whatsapp_access_token || ''}
+                    onChange={(e) => setConfigData({ ...configData, whatsapp_access_token: e.target.value })}
+                    className={validationErrors.whatsapp_access_token ? "border-destructive" : ""}
+                  />
+                  {validationErrors.whatsapp_access_token && (
+                    <p className="text-xs text-destructive">{validationErrors.whatsapp_access_token}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp_business_account_id">Business Account ID *</Label>
+                  <Input
+                    id="whatsapp_business_account_id"
+                    type="text"
+                    placeholder="Your WhatsApp Business Account ID"
+                    value={configData.whatsapp_business_account_id || ''}
+                    onChange={(e) => setConfigData({ ...configData, whatsapp_business_account_id: e.target.value })}
+                    className={validationErrors.whatsapp_business_account_id ? "border-destructive" : ""}
+                  />
+                  {validationErrors.whatsapp_business_account_id && (
+                    <p className="text-xs text-destructive">{validationErrors.whatsapp_business_account_id}</p>
+                  )}
+                </div>
+                <div className="p-3 bg-muted rounded-lg text-xs text-muted-foreground">
+                  <p className="font-medium mb-1">How to get WhatsApp credentials:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Go to Meta Business Suite</li>
+                    <li>Set up WhatsApp Business API</li>
+                    <li>Get your Phone Number ID and Access Token</li>
+                    <li>Find your Business Account ID in settings</li>
+                  </ol>
+                </div>
               </div>
             )}
 
-            {selectedIntegration?.integration_type === 'instagram' && (
+            {/* Instagram Configuration */}
+            {selectedIntegration?.integration_type === 'instagram' && !selectedIntegration?.is_connected && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="instagram_access_token">Access Token *</Label>
+                  <Input
+                    id="instagram_access_token"
+                    type="password"
+                    placeholder="Your Instagram Access Token"
+                    value={configData.instagram_access_token || ''}
+                    onChange={(e) => setConfigData({ ...configData, instagram_access_token: e.target.value })}
+                    className={validationErrors.instagram_access_token ? "border-destructive" : ""}
+                  />
+                  {validationErrors.instagram_access_token && (
+                    <p className="text-xs text-destructive">{validationErrors.instagram_access_token}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="instagram_page_id">Page ID *</Label>
+                  <Input
+                    id="instagram_page_id"
+                    type="text"
+                    placeholder="Your Instagram Page ID"
+                    value={configData.instagram_page_id || ''}
+                    onChange={(e) => setConfigData({ ...configData, instagram_page_id: e.target.value })}
+                    className={validationErrors.instagram_page_id ? "border-destructive" : ""}
+                  />
+                  {validationErrors.instagram_page_id && (
+                    <p className="text-xs text-destructive">{validationErrors.instagram_page_id}</p>
+                  )}
+                </div>
+                <div className="p-3 bg-muted rounded-lg text-xs text-muted-foreground">
+                  <p className="font-medium mb-1">How to get Instagram credentials:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Go to Meta for Developers</li>
+                    <li>Create an app with Instagram Basic Display</li>
+                    <li>Generate an access token</li>
+                    <li>Get your Instagram Page ID</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            {/* Connected State Info */}
+            {selectedIntegration?.is_connected && (
               <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm">
-                  Connecting Instagram will allow you to:
+                <p className="text-sm font-medium mb-2">Integration Active</p>
+                <p className="text-sm text-muted-foreground">
+                  This integration is currently connected and active. You can disconnect it to reconfigure or remove the integration.
                 </p>
-                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                  <li>Respond to direct messages</li>
-                  <li>Capture leads from comments</li>
-                  <li>Automate engagement workflows</li>
-                </ul>
               </div>
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             {selectedIntegration?.is_connected ? (
               <Button
                 variant="destructive"
-                onClick={() => {
-                  toggleConnection(selectedIntegration.integration_type, true);
-                  setIsDialogOpen(false);
-                }}
+                onClick={disconnectIntegration}
               >
                 Disconnect
               </Button>
             ) : (
-              <Button
-                onClick={() => {
-                  toggleConnection(selectedIntegration?.integration_type || '', false);
-                  setIsDialogOpen(false);
-                }}
-              >
-                Connect Now
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDialogOpen(false);
+                    setConfigData({});
+                    setValidationErrors({});
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={connectIntegration}>
+                  Connect Integration
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
