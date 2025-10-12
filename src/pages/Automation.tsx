@@ -56,7 +56,14 @@ export default function Automation() {
   const handleMessageSent = async (message: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to create workflows",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const { data, error } = await supabase.functions.invoke('generate-workflow', {
         body: { prompt: message, triggerType: selectedTrigger }
@@ -65,27 +72,29 @@ export default function Automation() {
       if (error) throw error;
 
       // Save workflow to database
-      const { error: insertError } = await supabase
+      const { data: newWorkflow, error: insertError } = await supabase
         .from('workflows')
         .insert({
           user_id: user.id,
           name: data.workflow.name,
           description: data.workflow.description,
           trigger_type: selectedTrigger,
-          actions: data.workflow.actions || []
-        });
+          status: 'active',
+          actions: []
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
 
       const aiMessage: Message = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `I've created a ${selectedTrigger} workflow: "${data.workflow.name}"\n\n${data.workflow.description}`,
+        content: `✅ Created "${data.workflow.name}"\n\n${data.workflow.description}\n\nTrigger: ${selectedTrigger}\nStatus: Active`,
       };
       
       setMessages((prev) => [...prev, aiMessage]);
-      setShowBuilder(true);
-      fetchWorkflows();
+      await fetchWorkflows();
       
       toast({
         title: "Workflow Created",
@@ -95,7 +104,7 @@ export default function Automation() {
       console.error("Error generating workflow:", error);
       toast({
         title: "Error",
-        description: "Failed to generate workflow. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to generate workflow. Please try again.",
         variant: "destructive",
       });
     }
@@ -160,9 +169,10 @@ export default function Automation() {
             <CardContent>
               <div className="space-y-3">
                 {workflows.length === 0 ? (
-                  <div className="text-center text-muted-foreground py-8">
-                    <p className="text-sm">No workflows yet</p>
-                    <p className="text-xs mt-1">Use AI to create your first automation</p>
+                  <div className="text-center text-muted-foreground py-12">
+                    <WorkflowIcon className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm font-medium">No workflows yet</p>
+                    <p className="text-xs mt-1">Use the AI assistant to create your first automation</p>
                   </div>
                 ) : (
                   workflows.map((workflow) => (
@@ -296,6 +306,7 @@ export default function Automation() {
                 <CardTitle>AI Workflow Creator</CardTitle>
               </div>
               <div className="mt-4">
+                <label className="text-xs text-muted-foreground mb-2 block">Trigger Type</label>
                 <Select value={selectedTrigger} onValueChange={setSelectedTrigger}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select trigger type" />
@@ -321,9 +332,9 @@ export default function Automation() {
               <AIChat
                 placeholder="Describe the workflow you want..."
                 suggestions={[
-                  "Create lead nurture flow",
-                  "Automate follow-ups",
-                  "Build email sequence",
+                  "Send welcome email when lead submits form",
+                  "Notify team when high-value deal is created",
+                  "Auto-respond to incoming WhatsApp messages",
                 ]}
                 messages={messages}
                 onMessagesChange={setMessages}
