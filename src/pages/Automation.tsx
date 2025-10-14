@@ -61,27 +61,17 @@ export default function Automation() {
 
   const handleMessageSent = async (message: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "Authentication Required",
-          description: "Please sign in to create workflows",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const { data, error } = await supabase.functions.invoke('generate-workflow', {
         body: { prompt: message, triggerType: selectedTrigger }
       });
 
       if (error) throw error;
 
-      // Save workflow to database
+      // Save workflow to database (user_id can be null for public workflows)
       const { data: newWorkflow, error: insertError } = await supabase
         .from('workflows')
         .insert({
-          user_id: user.id,
+          user_id: '00000000-0000-0000-0000-000000000000', // Default UUID for public workflows
           name: data.workflow.name,
           description: data.workflow.description,
           trigger_type: selectedTrigger,
