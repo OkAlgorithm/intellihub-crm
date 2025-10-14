@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Phone, Mail, MessageCircle, Send, Star, Plus, Sparkles, CheckCircle2, Circle, Mic, Volume2 } from "lucide-react";
+import { Phone, Mail, MessageCircle, Send, Star, Plus, Sparkles, CheckCircle2, Circle, Mic, Volume2, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +43,7 @@ export default function Conversations() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioMessages, setAudioMessages] = useState<AudioMessage[]>([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -98,6 +99,61 @@ export default function Conversations() {
       });
     } finally {
       setIsTranscribing(false);
+    }
+  };
+
+  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      // Upload to Supabase storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${selectedConversation.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio-messages')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('audio-messages')
+        .getPublicUrl(filePath);
+
+      // Create audio message record
+      const { error: insertError } = await supabase
+        .from('audio_messages')
+        .insert({
+          conversation_id: selectedConversation.id.toString(),
+          audio_url: publicUrl,
+          duration: null,
+          transcription: null
+        });
+
+      if (insertError) throw insertError;
+
+      // Refresh messages
+      await fetchAudioMessages(selectedConversation.id.toString());
+
+      toast({
+        title: "Success",
+        description: "Audio file uploaded successfully",
+      });
+    } catch (error) {
+      console.error("Error uploading audio:", error);
+      toast({
+        title: "Error",
+        description: "Failed to upload audio file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      event.target.value = '';
     }
   };
 
@@ -333,6 +389,28 @@ export default function Conversations() {
         </ScrollArea>
 
         <div className="p-4 border-t border-border">
+          <div className="flex gap-2 mb-2">
+            <label htmlFor="audio-upload">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={isUploading}
+                asChild
+              >
+                <span>
+                  <Upload className="h-4 w-4 mr-1" />
+                  {isUploading ? "Uploading..." : "Upload Audio"}
+                </span>
+              </Button>
+            </label>
+            <input
+              id="audio-upload"
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={handleAudioUpload}
+            />
+          </div>
           <div className="flex gap-2">
             <Input
               value={message}
