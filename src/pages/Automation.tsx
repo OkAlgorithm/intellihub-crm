@@ -2,11 +2,16 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import AIChat from "@/components/shared/AIChat";
-import { Workflow as WorkflowIcon, Play, Plus, Sparkles, Check, Mail, MessageCircle } from "lucide-react";
+import { Folder, Play, Plus, Sparkles, Mail, MessageCircle, Settings, MoreVertical, Search, List, Clock, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface Message {
   id: string;
@@ -24,9 +29,10 @@ interface Workflow {
 }
 
 export default function Automation() {
-  const [showBuilder, setShowBuilder] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedTrigger, setSelectedTrigger] = useState<string>("gmail");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAIDialog, setShowAIDialog] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -95,6 +101,7 @@ export default function Automation() {
       
       setMessages((prev) => [...prev, aiMessage]);
       await fetchWorkflows();
+      setShowAIDialog(false);
       
       toast({
         title: "Workflow Created",
@@ -146,204 +153,229 @@ export default function Automation() {
     }
   };
 
+  const filteredWorkflows = workflows.filter(workflow =>
+    workflow.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Automation</h1>
-        <p className="text-muted-foreground">Create and manage workflow automations</p>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold">Automation</h1>
+          <Tabs defaultValue="workflows" className="w-auto">
+            <TabsList>
+              <TabsTrigger value="workflows">Workflows</TabsTrigger>
+              <TabsTrigger value="settings" className="gap-2">
+                <Settings className="h-4 w-4" />
+                Global Workflow Settings
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline">
+            <Folder className="h-4 w-4 mr-2" />
+            Create Folder
+          </Button>
+          <Dialog open={showAIDialog} onOpenChange={setShowAIDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Workflow
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  AI Workflow Creator
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-2 block">Trigger Type</label>
+                  <Select value={selectedTrigger} onValueChange={setSelectedTrigger}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select trigger type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="gmail">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4" />
+                          <span>Gmail</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="whatsapp">
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4" />
+                          <span>WhatsApp</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="h-[500px]">
+                  <AIChat
+                    placeholder="Describe the workflow you want..."
+                    suggestions={[
+                      "Send welcome email when lead submits form",
+                      "Notify team when high-value deal is created",
+                      "Auto-respond to incoming WhatsApp messages",
+                    ]}
+                    messages={messages}
+                    onMessagesChange={setMessages}
+                    onMessageSent={handleMessageSent}
+                  />
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Workflows List */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader>
+      {/* Workflow List */}
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Workflow List</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {/* Tabs and Filters */}
+          <div className="p-4 border-b">
+            <Tabs defaultValue="all" className="w-full">
               <div className="flex items-center justify-between">
-                <CardTitle>Your Workflows</CardTitle>
-                <Button onClick={() => setShowBuilder(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Workflow
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {workflows.length === 0 ? (
-                  <div className="text-center text-muted-foreground py-12">
-                    <WorkflowIcon className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm font-medium">No workflows yet</p>
-                    <p className="text-xs mt-1">Use the AI assistant to create your first automation</p>
-                  </div>
-                ) : (
-                  workflows.map((workflow) => (
-                    <Card key={workflow.id} className="p-4 hover:shadow-md transition-shadow cursor-pointer">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            {workflow.trigger_type === 'gmail' ? (
-                              <Mail className="h-5 w-5 text-primary" />
-                            ) : workflow.trigger_type === 'whatsapp' ? (
-                              <MessageCircle className="h-5 w-5 text-primary" />
-                            ) : (
-                              <WorkflowIcon className="h-5 w-5 text-primary" />
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="font-semibold">{workflow.name}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Last run: {workflow.last_run_at 
-                                ? new Date(workflow.last_run_at).toLocaleString() 
-                                : 'Never'}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
-                          {workflow.status}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        <Badge variant="outline" className="text-xs">
-                          {workflow.trigger_type}
-                        </Badge>
-                        <span className="text-muted-foreground">
-                          {workflow.triggers_executed} triggers executed
-                        </span>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => runWorkflow(workflow.id, workflow.trigger_type)}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          Run
-                        </Button>
-                      </div>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Workflow Builder Placeholder */}
-          {showBuilder && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Workflow Builder</CardTitle>
-                  <Button variant="outline" onClick={() => setShowBuilder(false)}>
-                    Close
+                <div className="flex items-center gap-4">
+                  <TabsList>
+                    <TabsTrigger value="all">All Workflows</TabsTrigger>
+                    <TabsTrigger value="review">Needs Review (0)</TabsTrigger>
+                    <TabsTrigger value="deleted">Deleted</TabsTrigger>
+                  </TabsList>
+                  <Button variant="ghost" size="sm">
+                    + New Smart List
                   </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-muted/30 rounded-lg p-8 min-h-[400px] flex flex-col items-center justify-center">
-                  <div className="max-w-md text-center space-y-4">
-                    <div className="space-y-6">
-                      {/* Trigger */}
-                      <div className="bg-card rounded-lg p-4 border-2 border-primary shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
-                            1
-                          </div>
-                          <div className="flex-1 text-left">
-                            <div className="font-semibold">When lead submits form</div>
-                            <div className="text-xs text-muted-foreground">Trigger event</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <div className="h-8 w-0.5 bg-border"></div>
-                      </div>
-
-                      {/* Action */}
-                      <div className="bg-card rounded-lg p-4 border-2 border-border shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-muted text-foreground flex items-center justify-center text-xs font-bold">
-                            2
-                          </div>
-                          <div className="flex-1 text-left">
-                            <div className="font-semibold">Send welcome email</div>
-                            <div className="text-xs text-muted-foreground">Email action</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <div className="h-8 w-0.5 bg-border"></div>
-                      </div>
-
-                      {/* End */}
-                      <div className="bg-card rounded-lg p-4 border-2 border-success shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-success text-success-foreground flex items-center justify-center">
-                            <Check className="h-4 w-4" />
-                          </div>
-                          <div className="flex-1 text-left">
-                            <div className="font-semibold">Workflow complete</div>
-                            <div className="text-xs text-muted-foreground">End</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="text-sm text-muted-foreground mt-6">
-                      This is a sample workflow created by AI. Use the AI assistant to customize it.
-                    </p>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  Customize List
+                </Button>
+              </div>
+              
+              {/* Advanced Filters and Search */}
+              <div className="flex items-center justify-between mt-4">
+                <Button variant="ghost" size="sm">
+                  ▼ Advanced Filters
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="icon">
+                    <Clock className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon">
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 w-64"
+                    />
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              </div>
 
-        {/* AI Workflow Creator */}
-        <div className="h-[calc(100vh-12rem)]">
-          <Card className="h-full flex flex-col">
-            <CardHeader className="border-b border-border">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle>AI Workflow Creator</CardTitle>
-              </div>
-              <div className="mt-4">
-                <label className="text-xs text-muted-foreground mb-2 block">Trigger Type</label>
-                <Select value={selectedTrigger} onValueChange={setSelectedTrigger}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select trigger type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gmail">
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4" />
-                        <span>Gmail</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="whatsapp">
-                      <div className="flex items-center gap-2">
-                        <MessageCircle className="h-4 w-4" />
-                        <span>WhatsApp</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 p-0">
-              <AIChat
-                placeholder="Describe the workflow you want..."
-                suggestions={[
-                  "Send welcome email when lead submits form",
-                  "Notify team when high-value deal is created",
-                  "Auto-respond to incoming WhatsApp messages",
-                ]}
-                messages={messages}
-                onMessagesChange={setMessages}
-                onMessageSent={handleMessageSent}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              <TabsContent value="all" className="mt-4">
+                <div className="text-sm text-muted-foreground mb-2 px-2">Home</div>
+                
+                {/* Table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[300px]">Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-center">Total Enrolled</TableHead>
+                      <TableHead className="text-center">Active Enrolled</TableHead>
+                      <TableHead>Last Updated</TableHead>
+                      <TableHead>Created On</TableHead>
+                      <TableHead className="w-[100px]">Stats</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredWorkflows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                          <p className="text-sm font-medium">No workflows yet</p>
+                          <p className="text-xs mt-1">Click "Create Workflow" to get started</p>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredWorkflows.map((workflow) => (
+                        <TableRow key={workflow.id} className="cursor-pointer hover:bg-muted/50">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Folder className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium">{workflow.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {workflow.status === "active" && (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                Published
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">{workflow.triggers_executed}</TableCell>
+                          <TableCell className="text-center">0</TableCell>
+                          <TableCell>
+                            {workflow.last_run_at 
+                              ? new Date(workflow.last_run_at).toLocaleDateString('en-US', { 
+                                  month: 'short', 
+                                  day: '2-digit', 
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })
+                              : '-'}
+                          </TableCell>
+                          <TableCell>
+                            {new Date(workflow.last_run_at || Date.now()).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: '2-digit', 
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => runWorkflow(workflow.id, workflow.trigger_type)}>
+                                  <Play className="h-4 w-4 mr-2" />
+                                  Run Workflow
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>Edit</DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
