@@ -26,6 +26,7 @@ interface AudioMessage {
   transcription: string | null;
   duration: number | null;
   created_at: string;
+  isTranscribing?: boolean;
 }
 
 const conversations = [
@@ -42,7 +43,6 @@ export default function Conversations() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioMessages, setAudioMessages] = useState<AudioMessage[]>([]);
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
 
@@ -69,22 +69,53 @@ export default function Conversations() {
   const transcribeAudio = async (audioMessage: AudioMessage) => {
     if (audioMessage.transcription) return;
     
-    setIsTranscribing(true);
+    // Set loading state for this specific message
+    setAudioMessages(prev => 
+      prev.map(msg => 
+        msg.id === audioMessage.id 
+          ? { ...msg, isTranscribing: true }
+          : msg
+      )
+    );
+
     try {
+      console.log("Starting transcription for:", audioMessage.id);
+      
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
         body: { audioUrl: audioMessage.audio_url }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Transcription function error:", error);
+        throw error;
+      }
+
+      console.log("Transcription received:", data.transcription);
 
       // Update the audio message with transcription
-      await supabase
+      const { error: updateError } = await supabase
         .from('audio_messages')
         .update({ transcription: data.transcription })
         .eq('id', audioMessage.id);
 
-      // Refresh messages
-      fetchAudioMessages(selectedConversation.id.toString());
+      if (updateError) {
+        console.error("Update error:", updateError);
+        throw updateError;
+      }
+
+      console.log("Database updated successfully");
+
+      // Immediately update local state
+      setAudioMessages(prev => 
+        prev.map(msg => 
+          msg.id === audioMessage.id 
+            ? { ...msg, transcription: data.transcription, isTranscribing: false }
+            : msg
+        )
+      );
+
+      // Also refresh from database to ensure sync
+      await fetchAudioMessages(selectedConversation.id.toString());
 
       toast({
         title: "Success",
@@ -92,13 +123,21 @@ export default function Conversations() {
       });
     } catch (error) {
       console.error("Error transcribing audio:", error);
+      
+      // Remove loading state on error
+      setAudioMessages(prev => 
+        prev.map(msg => 
+          msg.id === audioMessage.id 
+            ? { ...msg, isTranscribing: false }
+            : msg
+        )
+      );
+
       toast({
         title: "Error",
-        description: "Failed to transcribe audio",
+        description: error instanceof Error ? error.message : "Failed to transcribe audio",
         variant: "destructive",
       });
-    } finally {
-      setIsTranscribing(false);
     }
   };
 
@@ -368,10 +407,10 @@ export default function Conversations() {
                       size="sm"
                       variant="outline"
                       onClick={() => transcribeAudio(audioMsg)}
-                      disabled={isTranscribing}
+                      disabled={audioMsg.isTranscribing}
                     >
                       <Sparkles className="h-3 w-3 mr-1" />
-                      {isTranscribing ? "Transcribing..." : "Transcribe with AI"}
+                      {audioMsg.isTranscribing ? "Transcribing..." : "Transcribe with AI"}
                     </Button>
                   )}
                   {audioMsg.transcription && (
