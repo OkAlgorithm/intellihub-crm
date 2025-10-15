@@ -363,12 +363,7 @@ export default function Conversations() {
                       </span>
                     )}
                   </div>
-                  {audioMsg.transcription ? (
-                    <div className="text-sm bg-card p-2 rounded border border-border">
-                      <p className="text-xs text-muted-foreground mb-1">Transcription:</p>
-                      <p>{audioMsg.transcription}</p>
-                    </div>
-                  ) : (
+                  {!audioMsg.transcription && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -378,6 +373,12 @@ export default function Conversations() {
                       <Sparkles className="h-3 w-3 mr-1" />
                       {isTranscribing ? "Transcribing..." : "Transcribe with AI"}
                     </Button>
+                  )}
+                  {audioMsg.transcription && (
+                    <div className="text-sm bg-card p-2 rounded border border-border mt-2">
+                      <p className="text-xs text-muted-foreground mb-1">Transcription:</p>
+                      <p>{audioMsg.transcription}</p>
+                    </div>
                   )}
                   <p className="text-xs text-muted-foreground">
                     {new Date(audioMsg.created_at).toLocaleTimeString()}
