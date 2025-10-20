@@ -22,10 +22,14 @@ interface Message {
 interface Workflow {
   id: string;
   name: string;
+  description: string | null;
   status: string;
   trigger_type: string;
   triggers_executed: number;
   last_run_at: string | null;
+  actions: any[] | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export default function Automation() {
@@ -55,38 +59,44 @@ export default function Automation() {
     if (error) {
       console.error('Error fetching workflows:', error);
     } else {
-      setWorkflows(data || []);
+      setWorkflows((data || []) as Workflow[]);
     }
   };
 
   const handleMessageSent = async (message: string) => {
     try {
+      console.log('Sending workflow generation request...');
       const { data, error } = await supabase.functions.invoke('generate-workflow', {
         body: { prompt: message, triggerType: selectedTrigger }
       });
 
       if (error) throw error;
 
-      // Save workflow to database (user_id can be null for public workflows)
+      console.log('AI generated workflow:', data.workflow);
+
+      // Save workflow to database
       const { data: newWorkflow, error: insertError } = await supabase
         .from('workflows')
         .insert({
-          user_id: '00000000-0000-0000-0000-000000000000', // Default UUID for public workflows
+          user_id: '00000000-0000-0000-0000-000000000000',
           name: data.workflow.name,
           description: data.workflow.description,
           trigger_type: selectedTrigger,
           status: 'active',
-          actions: []
+          actions: data.workflow.actions || []
         })
         .select()
         .single();
 
       if (insertError) throw insertError;
 
+      const actionsCount = data.workflow.actions?.length || 0;
+      const actionsList = data.workflow.actions?.map((a: any) => `• ${a.type}`).join('\n') || 'None';
+      
       const aiMessage: Message = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `✅ Created "${data.workflow.name}"\n\n${data.workflow.description}\n\nTrigger: ${selectedTrigger}\nStatus: Active`,
+        content: `✅ Created "${data.workflow.name}"\n\n${data.workflow.description}\n\n**Trigger:** ${selectedTrigger}\n**Actions (${actionsCount}):**\n${actionsList}\n\n**Status:** Published & Active`,
       };
       
       setMessages((prev) => [...prev, aiMessage]);
@@ -95,7 +105,7 @@ export default function Automation() {
       
       toast({
         title: "Workflow Created",
-        description: data.workflow.name,
+        description: `${data.workflow.name} with ${actionsCount} action(s)`,
       });
     } catch (error) {
       console.error("Error generating workflow:", error);
@@ -107,37 +117,76 @@ export default function Automation() {
     }
   };
 
-  const runWorkflow = async (workflowId: string, triggerType: string) => {
+  const runWorkflow = async (workflowId: string) => {
     try {
-      if (triggerType === 'gmail') {
-        await supabase.functions.invoke('gmail-sync', {
-          body: { action: 'sync' }
-        });
-      } else if (triggerType === 'whatsapp') {
-        // For WhatsApp, this would typically be triggered by incoming webhooks
-        toast({
-          title: "WhatsApp Integration",
-          description: "WhatsApp workflows are triggered automatically by incoming messages",
-        });
-        return;
-      }
+      console.log('Executing workflow:', workflowId);
+      
+      const { data, error } = await supabase.functions.invoke('execute-workflow', {
+        body: { workflowId, triggerData: {} }
+      });
 
-      await supabase
-        .from('workflows')
-        .update({ last_run_at: new Date().toISOString() })
-        .eq('id', workflowId);
+      if (error) throw error;
 
-      fetchWorkflows();
+      console.log('Workflow execution result:', data);
+
+      await fetchWorkflows();
       
       toast({
         title: "Workflow Executed",
-        description: "Workflow ran successfully",
+        description: `${data.workflowName} completed with ${data.results.length} action(s)`,
       });
     } catch (error) {
       console.error("Error running workflow:", error);
       toast({
         title: "Error",
-        description: "Failed to run workflow",
+        description: error instanceof Error ? error.message : "Failed to run workflow",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleWorkflowStatus = async (workflowId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'active' ? 'draft' : 'active';
+      await supabase
+        .from('workflows')
+        .update({ status: newStatus })
+        .eq('id', workflowId);
+
+      await fetchWorkflows();
+      
+      toast({
+        title: "Status Updated",
+        description: `Workflow is now ${newStatus === 'active' ? 'published' : 'draft'}`,
+      });
+    } catch (error) {
+      console.error("Error updating workflow status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update workflow status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const deleteWorkflow = async (workflowId: string) => {
+    try {
+      await supabase
+        .from('workflows')
+        .delete()
+        .eq('id', workflowId);
+
+      await fetchWorkflows();
+      
+      toast({
+        title: "Workflow Deleted",
+        description: "Workflow has been removed",
+      });
+    } catch (error) {
+      console.error("Error deleting workflow:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete workflow",
         variant: "destructive",
       });
     }
@@ -205,13 +254,56 @@ export default function Automation() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="h-[500px]">
+                <div className="space-y-2 mb-4">
+                  <label className="text-xs text-muted-foreground">Popular Automations</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start text-xs h-auto py-2"
+                      onClick={() => {
+                        const suggestion = selectedTrigger === 'gmail' 
+                          ? "When I receive an email from a new lead, create a deal in the CRM and send a welcome email"
+                          : "When I receive a WhatsApp message, create a new deal and notify the team";
+                        const userMsg: Message = { id: Date.now().toString(), role: "user", content: suggestion };
+                        setMessages(prev => [...prev, userMsg]);
+                        handleMessageSent(suggestion);
+                      }}
+                    >
+                      <Sparkles className="h-3 w-3 mr-2" />
+                      {selectedTrigger === 'gmail' ? 'Lead to Deal' : 'Message to Deal'}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start text-xs h-auto py-2"
+                      onClick={() => {
+                        const suggestion = selectedTrigger === 'gmail'
+                          ? "When I get an email with 'urgent' in the subject, notify the team immediately"
+                          : "When a customer says 'help', send an auto-response and notify support team";
+                        const userMsg: Message = { id: Date.now().toString(), role: "user", content: suggestion };
+                        setMessages(prev => [...prev, userMsg]);
+                        handleMessageSent(suggestion);
+                      }}
+                    >
+                      <Sparkles className="h-3 w-3 mr-2" />
+                      {selectedTrigger === 'gmail' ? 'Urgent Alert' : 'Auto-Response'}
+                    </Button>
+                  </div>
+                </div>
+                <div className="h-[450px]">
                   <AIChat
                     placeholder="Describe the workflow you want..."
                     suggestions={[
-                      "Send welcome email when lead submits form",
-                      "Notify team when high-value deal is created",
-                      "Auto-respond to incoming WhatsApp messages",
+                      selectedTrigger === 'gmail' 
+                        ? "Create a deal when I receive an email from a new customer"
+                        : "Send a thank you message when someone says 'order placed'",
+                      selectedTrigger === 'gmail'
+                        ? "Notify sales team when high-value lead emails"
+                        : "Create a support ticket for messages containing 'issue'",
+                      selectedTrigger === 'gmail'
+                        ? "Auto-respond to partnership inquiries"
+                        : "Send business hours message after 6 PM",
                     ]}
                     messages={messages}
                     onMessagesChange={setMessages}
@@ -308,11 +400,15 @@ export default function Automation() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {workflow.status === "active" && (
-                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                Published
-                              </Badge>
-                            )}
+                            <Badge 
+                              variant="outline" 
+                              className={workflow.status === "active" 
+                                ? "bg-green-50 text-green-700 border-green-200" 
+                                : "bg-gray-50 text-gray-700 border-gray-200"
+                              }
+                            >
+                              {workflow.status === "active" ? "Published" : "Draft"}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-center">{workflow.triggers_executed}</TableCell>
                           <TableCell className="text-center">0</TableCell>
@@ -328,7 +424,7 @@ export default function Automation() {
                               : '-'}
                           </TableCell>
                           <TableCell>
-                            {new Date(workflow.last_run_at || Date.now()).toLocaleDateString('en-US', { 
+                            {new Date(workflow.created_at).toLocaleDateString('en-US', { 
                               month: 'short', 
                               day: '2-digit', 
                               year: 'numeric',
@@ -347,12 +443,16 @@ export default function Automation() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => runWorkflow(workflow.id, workflow.trigger_type)}>
+                                <DropdownMenuItem onClick={() => runWorkflow(workflow.id)}>
                                   <Play className="h-4 w-4 mr-2" />
-                                  Run Workflow
+                                  Run Now
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>Edit</DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => toggleWorkflowStatus(workflow.id, workflow.status)}>
+                                  {workflow.status === 'active' ? 'Unpublish' : 'Publish'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive" onClick={() => deleteWorkflow(workflow.id)}>
+                                  Delete
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
