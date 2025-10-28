@@ -1,0 +1,31 @@
+project_id = "swogedvoisgdtlmkadzu"
+
+[functions.chat-assistant]
+verify_jwt = false
+
+[functions.generate-tasks]
+verify_jwt = false
+
+[functions.generate-content]
+verify_jwt = false
+
+[functions.generate-workflow]
+verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false
+
+[functions.query-knowledge]
+verify_jwt = false
+
+[functions.gmail-sync]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.execute-task-action]
+verify_jwt = false
+
+[functions.execute-workflow]
+verify_jwt = false
